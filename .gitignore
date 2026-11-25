@@ -3,3 +3,9 @@ frontend/.env*
 *.sqlite*
 *.private.*
 __pycache__/
+
+.env*
+*.db
+*.pem
+*.key
+*.log

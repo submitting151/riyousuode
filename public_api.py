@@ -12,6 +12,7 @@ origin=os.environ.get('FRONTEND_ORIGIN','').rstrip('/')
 if origin:
     app.add_middleware(CORSMiddleware, allow_origins=[origin], allow_methods=['GET','POST'], allow_headers=['Content-Type','X-Preview-Code'])
 RATE=defaultdict(deque)
+GLOBAL_RATE=deque()
 
 def permitted(code):
     expected=os.environ.get('PREVIEW_ACCESS_CODE','')
@@ -20,8 +21,9 @@ def permitted(code):
 def limit(host):
     now=time.monotonic();q=RATE[host]
     while q and now-q[0]>60:q.popleft()
-    if len(q)>=10:return False
-    q.append(now)
+    while GLOBAL_RATE and now-GLOBAL_RATE[0]>3600:GLOBAL_RATE.popleft()
+    if len(q)>=10 or len(GLOBAL_RATE)>=60:return False
+    q.append(now);GLOBAL_RATE.append(now)
     return True
 
 @app.get('/health')
@@ -35,8 +37,12 @@ async def api(kind:str, request:Request):
     if kind not in ('ai','review'):return JSONResponse({'ok':False,'error':'此功能暂不可用'},404)
     try:
         if int(request.headers.get('content-length','0'))>100000:raise ValueError('请求过长')
-        raw=await request.body()
-        if len(raw)>100000:raise ValueError('请求过长')
+        chunks=[];size=0
+        async for chunk in request.stream():
+            size+=len(chunk)
+            if size>100000:raise ValueError('请求过长')
+            chunks.append(chunk)
+        raw=b''.join(chunks)
         d=json.loads(raw)
         if not isinstance(d,dict):raise ValueError('请求格式不正确')
         if kind=='review':result=await asyncio.to_thread(server.weekly_review,d.get('entries'))
