@@ -1,0 +1,14 @@
+(function(){
+ const CONSENT='diary-metrics-consent-v1', VISITOR='diary-metrics-id-v1', ATTEMPT='diary-metrics-attempt-v1', PENDING='diary-metrics-pending-delete-v1', QUEUE='diary-metrics-queue-v1';
+ let flushing=false;
+ function allowed(){return localStorage.getItem(CONSENT)==='yes'}
+ function visitor(){let v=localStorage.getItem(VISITOR);if(!v){v=crypto.randomUUID();localStorage.setItem(VISITOR,v)}return v}
+ function attempt(){let a=sessionStorage.getItem(ATTEMPT);if(!a){a=crypto.randomUUID();sessionStorage.setItem(ATTEMPT,a)}return a}
+ function readQueue(){try{let q=JSON.parse(localStorage.getItem(QUEUE)||'[]');return Array.isArray(q)?q:[]}catch{return []}}
+ async function send(path,payload){if(!window.DIARY_API_BASE)return false;try{const r=await fetch(window.DIARY_API_BASE+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),keepalive:true,signal:AbortSignal.timeout(90000)});return r.ok}catch{return false}}
+ async function retryDeletion(){let id=localStorage.getItem(PENDING);if(!id)return true;if(await send('/metrics/delete',{visitor_id:id})){localStorage.removeItem(PENDING);return true}return false}
+ async function flush(){if(flushing||!allowed())return;flushing=true;try{while(allowed()){const q=readQueue();if(!q.length)break;let ok=await send('/metrics/event',q[0]);if(!ok)break;const current=readQueue();localStorage.setItem(QUEUE,JSON.stringify(current.filter(e=>e.event_id!==q[0].event_id)))}}finally{flushing=false}}
+ function track(event,feedback){if(!allowed())return false;let data={event_id:crypto.randomUUID(),visitor_id:visitor(),attempt_id:event==='feedback'?crypto.randomUUID():attempt(),event};if(feedback)data.feedback=feedback;let q=readQueue();q.push(data);localStorage.setItem(QUEUE,JSON.stringify(q.slice(-100)));void flush();return true}
+ window.diaryMetrics={allowed,decision:()=>localStorage.getItem(CONSENT),setConsent:async function(value){if(value){if(!await retryDeletion())return false;localStorage.setItem(CONSENT,'yes');visitor();void flush();return true}localStorage.setItem(CONSENT,'no');let id=localStorage.getItem(VISITOR);localStorage.removeItem(VISITOR);localStorage.removeItem(QUEUE);sessionStorage.removeItem(ATTEMPT);if(id){localStorage.setItem(PENDING,id);return await retryDeletion()}return true},start:function(){if(!allowed()||sessionStorage.getItem(ATTEMPT))return;attempt();track('record_started')},saved:function(){if(!allowed()||!sessionStorage.getItem(ATTEMPT))return;track('record_saved');sessionStorage.removeItem(ATTEMPT)},track,feedback:function(choice){if(!['smooth','average','difficulty'].includes(choice)||!allowed())return false;return track('feedback',choice)}};
+ window.addEventListener('online',()=>{void retryDeletion();void flush()});void retryDeletion();void flush();
+})();

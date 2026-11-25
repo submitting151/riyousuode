@@ -6,13 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import websockets
 import server
+import metrics
 
 app=FastAPI(docs_url=None,redoc_url=None,openapi_url=None)
 origin=os.environ.get('FRONTEND_ORIGIN','').rstrip('/')
 if origin:
-    app.add_middleware(CORSMiddleware, allow_origins=[origin], allow_methods=['GET','POST'], allow_headers=['Content-Type','X-Preview-Code'])
+    app.add_middleware(CORSMiddleware, allow_origins=[origin], allow_methods=['GET','POST'], allow_headers=['Content-Type','X-Preview-Code','X-Metrics-Admin'])
 RATE=defaultdict(deque)
 GLOBAL_RATE=deque()
+METRICS_RATE=defaultdict(deque)
 
 def permitted(code):
     expected=os.environ.get('PREVIEW_ACCESS_CODE','')
@@ -26,8 +28,55 @@ def limit(host):
     q.append(now);GLOBAL_RATE.append(now)
     return True
 
+def metrics_limit(host):
+    now=time.monotonic();q=METRICS_RATE[host]
+    while q and now-q[0]>60:q.popleft()
+    if len(q)>=120:return False
+    q.append(now);return True
+
 @app.get('/health')
 def health():return {'ok':True}
+
+@app.post('/metrics/event')
+async def metrics_event(request:Request):
+    if not origin or request.headers.get('origin')!=origin:return JSONResponse({'ok':False},403)
+    if not metrics_limit(request.client.host):return JSONResponse({'ok':False},429)
+    try:
+        chunks=[];size=0
+        async for chunk in request.stream():
+            size+=len(chunk)
+            if size>2048:raise ValueError('too long')
+            chunks.append(chunk)
+        data=json.loads(b''.join(chunks))
+        await asyncio.to_thread(metrics.put,data)
+        return {'ok':True}
+    except (ValueError,TypeError):return JSONResponse({'ok':False},400)
+    except Exception:return JSONResponse({'ok':False},503)
+
+@app.post('/metrics/delete')
+async def metrics_delete(request:Request):
+    if not origin or request.headers.get('origin')!=origin:return JSONResponse({'ok':False},403)
+    if not metrics_limit(request.client.host):return JSONResponse({'ok':False},429)
+    try:
+        if int(request.headers.get('content-length','0'))>256:return JSONResponse({'ok':False},413)
+        chunks=[];size=0
+        async for chunk in request.stream():
+            size+=len(chunk)
+            if size>256:return JSONResponse({'ok':False},413)
+            chunks.append(chunk)
+        data=json.loads(b''.join(chunks))
+        if not isinstance(data,dict) or set(data)!={'visitor_id'}:raise ValueError('invalid')
+        await asyncio.to_thread(metrics.delete,data['visitor_id']);return {'ok':True}
+    except (ValueError,TypeError):return JSONResponse({'ok':False},400)
+    except Exception:return JSONResponse({'ok':False},503)
+
+@app.post('/metrics/summary')
+async def metrics_summary(request:Request):
+    expected=os.environ.get('METRICS_ADMIN_TOKEN',''); supplied=request.headers.get('x-metrics-admin','')
+    if not origin or request.headers.get('origin')!=origin or len(expected)<24 or not hmac.compare_digest(expected,supplied):return JSONResponse({'ok':False},403)
+    if not limit(request.client.host):return JSONResponse({'ok':False},429)
+    try:return {'ok':True,'data':await asyncio.to_thread(metrics.summary)}
+    except Exception:return JSONResponse({'ok':False},503)
 
 @app.post('/api/{kind}')
 async def api(kind:str, request:Request):
