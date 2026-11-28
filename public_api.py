@@ -115,7 +115,7 @@ async def realtime(ws:WebSocket):
         if not re.fullmatch(r'[A-Za-z0-9_-]+',workspace) or not api_key:raise ValueError('语音服务未配置')
         url='wss://'+workspace+'.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime?model=qwen3-asr-flash-realtime'
         async with websockets.connect(url,additional_headers={'Authorization':'Bearer '+api_key,'OpenAI-Beta':'realtime=v1'},open_timeout=15,max_size=1024*1024) as remote:
-            await remote.send(json.dumps({'event_id':'setup','type':'session.update','session':{'input_audio_format':'pcm','sample_rate':16000,'turn_detection':{'type':'server_vad','threshold':0.2,'silence_duration_ms':1200}}}))
+            await remote.send(json.dumps({'event_id':'setup','type':'session.update','session':{'input_audio_format':'pcm','sample_rate':16000,'turn_detection':{'type':'server_vad','threshold':0.2,'silence_duration_ms':800}}}))
             await ws.send_json({'type':'ready'})
             async def up():
                 end=time.monotonic()+135;total=0
@@ -147,3 +147,4 @@ async def realtime(ws:WebSocket):
     finally:
         try:await ws.close()
         except Exception:pass
+
