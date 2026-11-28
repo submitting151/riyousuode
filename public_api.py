@@ -98,7 +98,7 @@ async def api(kind:str, request:Request):
         else:
             text=d.get('text','')
             if not isinstance(text,str) or not text.strip() or len(text)>30000:raise ValueError('记录为空或过长')
-            result=await asyncio.to_thread(server.generate,d.get('kind'),text,str(d.get('question','')),str(d.get('answer','')),d.get('memories') if d.get('kind')=='listen' else None)
+            result=await asyncio.to_thread(server.conversation_reply,text,d.get('turns',[]),d.get('memories')) if d.get('kind')=='chat' else await asyncio.to_thread(server.generate,d.get('kind'),text,str(d.get('question','')),str(d.get('answer','')),d.get('memories') if d.get('kind')=='listen' else None)
         return {'ok':True,'data':result}
     except ValueError as e:return JSONResponse({'ok':False,'error':str(e)},400)
     except Exception:return JSONResponse({'ok':False,'error':'服务连接失败，请稍后重试'},502)
