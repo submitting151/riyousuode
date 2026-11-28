@@ -1,6 +1,6 @@
 """Privacy-minimised event storage for the preview; no diary content."""
 import os, uuid
-EVENTS={'record_started','record_saved','transcribe_started','transcribe_succeeded','transcribe_failed','feedback'}
+EVENTS={'active','record_started','record_saved','transcribe_started','transcribe_succeeded','transcribe_failed','feedback'}
 FEEDBACK={'smooth','average','difficulty'}
 def uid(value):
     if not isinstance(value,str):raise ValueError('invalid identifier')
@@ -51,4 +51,6 @@ def summary():
         for event,rating,count in rows:
             if event=='feedback':feedback[rating]=count
             else:counts[event]=count
-        return {'first_started':first[0],'first_saved':first[1], 'transcribe_started':counts.get('transcribe_started',0),'transcribe_succeeded':counts.get('transcribe_succeeded',0),'transcribe_failed':counts.get('transcribe_failed',0),'feedback':feedback}
+        cohort=conn.execute("WITH days AS (SELECT DISTINCT visitor_id,(created_at AT TIME ZONE 'Asia/Shanghai')::date AS day FROM preview_events WHERE event='active' AND created_at >= NOW()-INTERVAL '30 days'), firsts AS (SELECT visitor_id,MIN(day) AS first_day FROM days GROUP BY visitor_id), eligible AS (SELECT * FROM firsts WHERE first_day <= (NOW() AT TIME ZONE 'Asia/Shanghai')::date - 7) SELECT (SELECT COUNT(DISTINCT visitor_id) FROM days WHERE day=(NOW() AT TIME ZONE 'Asia/Shanghai')::date),COUNT(*),COUNT(*) FILTER (WHERE EXISTS(SELECT 1 FROM days d WHERE d.visitor_id=e.visitor_id AND d.day BETWEEN e.first_day+1 AND e.first_day+7)) FROM eligible e").fetchone()
+        return {'first_started':first[0],'first_saved':first[1], 'transcribe_started':counts.get('transcribe_started',0),'transcribe_succeeded':counts.get('transcribe_succeeded',0),'transcribe_failed':counts.get('transcribe_failed',0),'feedback':feedback,'daily_active_devices':cohort[0],'return_eligible':cohort[1],'returned_7d':cohort[2]}
+
