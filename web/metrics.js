@@ -1,5 +1,5 @@
 (function(){
- const CONSENT='diary-metrics-consent-v1', VISITOR='diary-metrics-id-v1', ATTEMPT='diary-metrics-attempt-v1', PENDING='diary-metrics-pending-delete-v1', QUEUE='diary-metrics-queue-v1';
+ const CONSENT='diary-metrics-consent-v2', VISITOR='diary-metrics-id-v1', ATTEMPT='diary-metrics-attempt-v1', PENDING='diary-metrics-pending-delete-v1', QUEUE='diary-metrics-queue-v1';
  let flushing=false;
  function allowed(){return localStorage.getItem(CONSENT)==='yes'}
  function visitor(){let v=localStorage.getItem(VISITOR);if(!v){v=crypto.randomUUID();localStorage.setItem(VISITOR,v)}return v}
